@@ -8,16 +8,19 @@ import { Link, useNavigate } from 'react-router-dom'
 import axios from 'axios'
 import { USER_API_END_POINT } from '@/utils/constant'
 import { toast } from 'sonner'
+import { useDispatch, useSelector } from 'react-redux'
+import { setLoading } from '@/redux/authSlice'
+import { Loader2 } from 'lucide-react'
 const Signup = () => {
     const [input, setInput] = useState({
         fullName: "",
         email: "",
         phoneNumber: "",
-        password: "", 
+        password: "",
         role: "",
         file: ""
     })
-    const navigate=useNavigate();
+    const navigate = useNavigate();
 
 
 
@@ -27,36 +30,46 @@ const Signup = () => {
 
     const changeFileHandler = (e) => {
         setInput
-        ({ ...input, file: e.target.files?.[0] })
+            ({ ...input, file: e.target.files?.[0] })
     }
+    const dispath = useDispatch();
 
-// apii thats why asyncc
-    const submitHandler = async (e)=>{
+    const { loading } = useSelector((store) => store.auth);
+
+    // apii thats why asyncc
+    const submitHandler = async (e) => {
         e.preventDefault();
         // console.log(input)
-        const formData=new FormData()
-        formData.append("fullname",input.fullName)
-        formData.append("email",input.email)
-        formData.append("phoneNumber",input.phoneNumber)
-        formData.append("password",input.password)
-        formData.append("role",input.role)
-        if(input.file){
-            formData.append("file",input.file)
+        const formData = new FormData()
+        formData.append("fullname", input.fullName)
+        formData.append("email", input.email)
+        formData.append("phoneNumber", input.phoneNumber)
+        formData.append("password", input.password)
+        formData.append("role", input.role)
+        if (input.file) {
+            formData.append("file", input.file)
         }
         try {
-            const res=await axios.post(`${USER_API_END_POINT}/register`,formData,{
-                headers:{
-                    "Content-Type":"multipart/form-data"
+            dispath(setLoading(true))
+
+            const res = await axios.post(`${USER_API_END_POINT}/register`, formData, {
+                headers: {
+                    "Content-Type": "multipart/form-data"
                 },
-                withCredentials:true,
-            } )
-            if(res.data.success){
+                withCredentials: true,
+            })
+            if (res.data.success) {
                 navigate("/login ")
                 toast.succes(res.data.message);
             }
 
         } catch (error) {
             console.log(error)
+            toast.error(error)
+        }
+        finally {
+            dispath(setLoading(false))
+
         }
 
     }
@@ -126,7 +139,7 @@ const Signup = () => {
                                     name="role"
                                     value="student"
                                     className="cursor-pointer"
-                                    checked={input.role==='student'}
+                                    checked={input.role === 'student'}
                                     onChange={changeEventHandler}
                                 />
                                 <Label htmlFor="r1">Student</Label>
@@ -137,7 +150,7 @@ const Signup = () => {
                                     name="role"
                                     value="recuriter"
                                     className="cursor-pointer"
-                                    checked={input.role==='Recuriter'}
+                                    checked={input.role === 'Recuriter'}
                                     onChange={changeEventHandler}
                                 />
                                 <Label htmlFor="r2">Recuriter</Label>
@@ -155,9 +168,12 @@ const Signup = () => {
                             />
                         </div>
                     </div>
-                    <Button type="submit" className="w-full my-4">
-                        Signup
-                    </Button>
+                    {
+                        loading ? <Button className="w-full my-4"> <Loader2 className='mr-2 h-4 w-4 animate-spin'>wait bro:)</Loader2></Button>
+                            : <Button type="submit" className="w-full my-4">
+                                Signup
+                            </Button>
+                    }
                     <span className='text-sm'>Already have an account? <Link to="/login" className='text-blue-600' >Login</Link></span>
                 </form>
 

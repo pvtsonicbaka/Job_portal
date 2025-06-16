@@ -13,7 +13,7 @@ app.use(express.json())
 app.use(cookie_parser())
 app.use(express.urlencoded({extended:true}))
 app.use(cors({
-  origin: 'http://localhost:3000', // Allow only React frontend
+  origin: 'http://localhost:5173', // Allow only React frontend
 //   methods: ['GET', 'POST'],       // Optional: limit allowed HTTP methods
   credentials: true               // Optional: allow cookies/auth headers
 }));

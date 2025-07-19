@@ -7,7 +7,9 @@ import routes from './routes/user.route.js'; // Import user routes
 import companyRoutes from './routes/company.route.js'; // Import company routes
 import jobRoutes from './routes/job.route.js'; // Import job routes
 import applicationRoutes from './routes/application.route.js'; // Import application routes
-const port=3000
+import 'dotenv/config';
+const port=process.env.PORT || 8000; // Use PORT from environment variables or default to 8000
+
 
 app.use(express.json())
 app.use(cookie_parser())

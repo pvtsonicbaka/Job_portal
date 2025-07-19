@@ -1,24 +1,42 @@
 import { User } from "../models/user.model.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import cloudinary from "../utils/cloudinary.js";
+import getDataUri from "../utils/datauri.js";
+// import streamifier from "streamifier";s
 
 export const register = async (req, res) => {
   try {
     const { fullname, email, phoneNumber, password, role } = req.body;
-    console.log(fullname, email, phoneNumber, password, role)
+    console.log("Register request body:", {
+      fullname,
+      email,
+      phoneNumber,
+      password,
+      role,
+    });
+
     if (!fullname || !email || !phoneNumber || !password || !role) {
+      console.log("Missing fields in register request");
       return res
         .status(400)
         .json({ message: "All fields are required", success: false });
     }
-    // Check if user already exists
+
+    const file = req.file;
+    const fileUri = getDataUri(file);
+    const cloudResponse = await cloudinary.uploader.upload(fileUri.content);
+
     const existingUser = await User.findOne({ email: email });
     if (existingUser) {
+      console.log("User already exists:", email);
       return res
         .status(400)
         .json({ message: "User already exists", success: false });
     }
+
     const hashedPassword = await bcrypt.hash(password, 10);
+    console.log("Password hashed");
 
     await User.create({
       fullname,
@@ -26,7 +44,12 @@ export const register = async (req, res) => {
       phoneNumber,
       password: hashedPassword,
       role,
+      profile: {
+        profilePicture: cloudResponse.secure_url,
+      },
     });
+
+    console.log("User registered:", email);
 
     return res.status(201).json({
       message: "User registered successfully",
@@ -34,50 +57,67 @@ export const register = async (req, res) => {
     });
   } catch (error) {
     console.error("Error during registration:", error);
-    return res.status(500).json({ message: "Internal server error from register" });
+    return res
+      .status(500)
+      .json({ message: "Internal server error from register" });
   }
 };
 
 export const login = async (req, res) => {
   try {
     const { email, password, role } = req.body;
+    console.log("Login request body:", { email, password, role });
+
     if (!email || !password || !role) {
+      console.log("Missing fields in login request");
       return res
         .status(400)
         .json({ message: "All fields are required", success: false });
     }
+
     let user = await User.findOne({ email: email });
     if (!user) {
+      console.log("Invalid login: email not found", email);
       return res
         .status(400)
         .json({ message: "Invalid credentials (email)", success: false });
     }
+
     const isPasswordMatch = await bcrypt.compare(password, user.password);
     if (!isPasswordMatch) {
+      console.log("Invalid login: password mismatch");
       return res
         .status(400)
         .json({ message: "Invalid credentials (password)", success: false });
     }
 
     if (role != user.role) {
+      console.log("Invalid login: role mismatch", {
+        provided: role,
+        actual: user.role,
+      });
       return res
         .status(400)
         .json({ message: "Invalid credentials (role)", success: false });
     }
 
-    const tokenData = {
-      userId: user._id,
-    };
+    const tokenData = { userId: user._id };
     const token = await jwt.sign(tokenData, process.env.SECRET_KEY, {
       expiresIn: "1d",
     });
+    console.log("JWT Token generated");
+
     user = {
       _id: user._id,
       fullname: user.fullname,
       email: user.email,
       phoneNumber: user.phoneNumber,
       role: user.role,
+      profile: user.profile || {},
     };
+
+    console.log("User logged in:", user);
+
     return res
       .status(200)
       .cookie("token", token, { maxAge: 24 * 60 * 60 * 1000, httpOnly: true })
@@ -96,6 +136,7 @@ export const login = async (req, res) => {
 
 export const logOut = async (req, res) => {
   try {
+    console.log("User logging out");
     res.clearCookie("token");
     return res.status(200).json({
       message: "Logout successful",
@@ -112,60 +153,109 @@ export const logOut = async (req, res) => {
 export const updateProfile = async (req, res) => {
   try {
     const { fullname, email, phoneNumber, bio, skills } = req.body;
-    const file = req.file; // resume file
 
-    const userId = req.id; // Middleware authentication
+    const file = req.file;
+    console.log("📥 File Received in Backend:");
+    console.log("  Name:", file?.originalname);
+    console.log("  Mimetype:", file?.mimetype);
+    console.log("  Buffer Length:", file?.buffer?.length);
+
+    // cloudinary ayega idhar
+    const fileUri = getDataUri(file);
+    const cloudResponse = await cloudinary.uploader.upload(fileUri.content, {
+      resource_type: "raw",
+      folder: "Job Portal",
+      public_id: `Job Portal/${file.originalname}`,
+      use_filename: true,
+      unique_filename: false,
+    });
+
+    let skillsArray;
+    if (skills) {
+      skillsArray = skills.split(",");
+    }
+    const userId = req.id; // middleware authentication
     let user = await User.findById(userId);
 
     if (!user) {
-      console.error("User not found with ID:", userId);
-      return res
-        .status(404)
-        .json({ message: "User not found", success: false });
+      return res.status(400).json({
+        message: "User not found.",
+        success: false,
+      });
     }
-    if (!user.profile) {
-      user.profile = {};
-    }
-
-    // Only update fields that are provided in the request
+    // updating data
     if (fullname) user.fullname = fullname;
     if (email) user.email = email;
     if (phoneNumber) user.phoneNumber = phoneNumber;
     if (bio) user.profile.bio = bio;
-    if (skills)
-      user.profile.skills = skills.split(",").map((skill) => skill.trim());
+    if (skills) user.profile.skills = skillsArray;
+
+    // resume comes later here...
+    if (cloudResponse) {
+      user.profile.resume = cloudResponse.secure_url; // save the cloudinary url
+      user.profile.resumeOriginalName = file.originalname; // Save the original file name
+      console.log("Resume uploaded to Cloudinary:", cloudResponse.secure_url);
+    }
 
     await user.save();
 
-    const updatedUser = {
+    user = {
       _id: user._id,
       fullname: user.fullname,
       email: user.email,
       phoneNumber: user.phoneNumber,
-      // bio: user.bio,
-      // skills: user.skills,
       role: user.role,
-      profile: {
-        bio: user.profile.bio || "",
-        skills: user.profile.skills || [],
-        resume: file ? file.path : user.profile?.resume || "", // Use existing resume if not updated
-        resumeOriginalName: file
-          ? file.originalname
-          : user.profile?.resumeOriginalName || "", // Use existing original name if not updated
-        profilePicture: user.profile?.profilePicture || "", // Use existing profile picture if not updated
-      },
+      profile: user.profile,
     };
 
-    console.log(updatedUser);
     return res.status(200).json({
-      message: "Profile updated successfully",
-      user: updatedUser,
+      message: "Profile updated successfully.",
+      user,
       success: true,
     });
   } catch (error) {
-    console.error("Error during profile update:", error);
-    return res
-      .status(500)
-      .json({ message: "Internal server error", success: false });
+    console.log(error);
+  }
+};
+
+export const autoLogin = async (req, res) => {
+  try {
+    const token = req.cookies.token;
+    console.log("Auto-login token received:", token);
+    if (!token) {
+      return res.status(401).json({
+        message: "Not authenticated. Please log in.",
+        success: false,
+      });
+    }
+
+    const decoded = jwt.verify(token, process.env.SECRET_KEY);
+    const user = await User.findById(decoded.userId);
+
+    if (!user) {
+      return res.status(404).json({
+        message: "User not found.",
+        success: false,
+      });
+    }
+
+    return res.status(200).json({
+      message: `User logged in successfully (auto-login). Welcome back ${user.fullname}`,
+      user: {
+        _id: user._id,
+        fullname: user.fullname,
+        email: user.email,
+        phoneNumber: user.phoneNumber,
+        role: user.role,
+        profile: user.profile,
+      },
+      success: true,
+    });
+  } catch (error) {
+    console.error("Error during auto-login:", error);
+    return res.status(500).json({
+      message: "Internal server error during auto-login",
+      success: false,
+    });
   }
 };
